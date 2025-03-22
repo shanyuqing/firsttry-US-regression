@@ -4,7 +4,7 @@ import numpy as np
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from model import construct_graph
+from models.my_model import construct_graph
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from model import *
+from models.my_model import *
 from data.generate_data_for_k import create_data, normalize
 import torch
 import torch.nn as nn

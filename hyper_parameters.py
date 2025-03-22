@@ -4,10 +4,10 @@
 # 正则化参数（beta, theta）：1e-10 到 1e-3（对数尺度）。
 # 优化器类型：Adam 或 SGD。
 # epochs 5到50
-from model import *
+from models.my_model import *
 import torch.optim as optim
 import optuna
-from main import train_data, val_data,test_data, train_model, test_model, calculate_metrics
+from run_mymodel import train_data, val_data,test_data, train_model, test_model, calculate_metrics
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 time_window=15
 

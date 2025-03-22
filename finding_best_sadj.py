@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from model import *
+from models.my_model import *
 from data.generate_data import create_data, normalize
 import torch
 import torch.nn as nn
@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from scipy.stats import spearmanr  
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from main import stock_data, calculate_metrics, train_model, test_model
+from run_mymodel import stock_data, calculate_metrics, train_model, test_model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
