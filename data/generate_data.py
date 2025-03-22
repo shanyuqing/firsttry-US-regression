@@ -19,45 +19,35 @@ def normalize(mx):
     mx = r_mat_inv.dot(mx)
     return mx
 
-def create_data(stock_data, sadj, window):
+def create_data(stock_data, sadj, time_window):
     num_stocks, num_time_steps, num_features = stock_data.shape
     
     # 初始化存储批次数据的列表
     batch_data_list = []
 
     # 滚动窗口生成批次
-    for start in range(num_time_steps - window):
+    for start in range(num_time_steps - time_window):
 
         # 当前窗口的节点特征：过去20天的收盘价
-        node_features = torch.tensor(stock_data[:, start:start + window, 3], dtype=torch.float32)  # 使用收盘价作为节点特征
-        node_features = node_features.view(num_stocks, window)
+        node_features = torch.tensor(stock_data[:, start:start + time_window, 3], dtype=torch.float32)  # 使用收盘价作为节点特征
+        node_features = node_features.view(num_stocks, time_window)
 
         # 创建图的边和边特征
         edge_index, edge_attr = construct_graph(sadj)
 
         # 目标值：窗口结束后的第一个时间步的收盘价
-        y = torch.tensor(stock_data[:, start + window, 3], dtype=torch.float32)
-        # y = y.view(num_stocks, 1)
-
-        # # 滑动窗口内进行最大-最小归一化
-        # z = torch.cat((node_features, y),dim = 1)
-        # min_val = z.min(dim=0, keepdim=True)[0]  
-        # max_val = z.max(dim=0, keepdim=True)[0]  
-        # z_normalized = (z - min_val) / (max_val - min_val)
-        # node_features = z_normalized[:, :-1]  
-        # y = z_normalized[:, -1:]
-
+        y = torch.tensor(stock_data[:, start + time_window, 3], dtype=torch.float32)
+        
         # 创建动态特征邻接矩阵
         dynamic_similarity_matrix = cosine_similarity(node_features)
         # 将相似度矩阵转化为 PyTorch 张量
         fadj = torch.tensor(dynamic_similarity_matrix, dtype=torch.float32)
-        k = 4 #后继需要动态调整！！
+        k = 6 #US 最优为6
 
         _, indices = fadj.topk(k, dim=1)
         for i in range(fadj.size(0)):
             fadj[i][fadj[i] < fadj[i, indices[i][-1]]] = 0
-        fadj = torch.tensor(fadj, dtype=torch.float32)
-
+        
         # 对邻接矩阵进行对称化处理
         fadj = fadj + fadj.T.mul(fadj.T > fadj) - fadj.mul(fadj.T > fadj)
         # 对 fadj 加上单位矩阵（自环），然后进行归一化

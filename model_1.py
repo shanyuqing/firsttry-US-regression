@@ -1,3 +1,8 @@
+# 消融实验模型介绍：
+# 仅使用结构相关性图（由大型语言模型生成）。
+# 使用多层GCN处理结构相关性图，生成节点嵌入。
+# 直接使用全连接层进行股价预测，不引入时间相关性图或注意力机制。
+# 目的：验证结构相关性图对股价预测的贡献。
 import torch
 import torch.nn as nn
 from layers import GraphConvolution
@@ -74,42 +79,28 @@ class SFGCN(nn.Module):
 
         # 定义三个GCN模块，分别处理结构图、特征图和公共图
         self.SGCN1 = GCN(input_dim, hidden_dim1, hidden_dim2, dropout)  # 处理结构图
-        self.SGCN2 = GCN(input_dim, hidden_dim1, hidden_dim2, dropout)  # 处理特征图
         self.CGCN = GCN(input_dim, hidden_dim1, hidden_dim2, dropout)   # 处理公共图
+
         self.dropout = dropout
         self.a = nn.Parameter(torch.zeros(size=(hidden_dim2, 1)))  # 注意力参数
         nn.init.xavier_uniform_(self.a.data, gain=1.414)  # 初始化
-        self.attention = Attention(hidden_dim2)  # 注意力机制
-        self.tanh = nn.Tanh()
         # 添加部分??
         self.gcn1 = GCNLayer(hidden_dim2, hidden_dim3) 
-        self.rnn = nn.RNN(hidden_dim3, hidden_dim4, batch_first=True)
+        self.gcn2 = GCNLayer(hidden_dim3, hidden_dim4)  
         self.fc=nn.Linear(hidden_dim4, 1)
-
 
     def forward(self, x, sadj, fadj, edge_index):
         # 通过结构图（sadj）和特征图（fadj）进行图卷积计算
         emb1 = self.SGCN1(x, sadj)  # Special_GCN1 -- 结构图
-        com1 = self.CGCN(x, sadj)   # Common_GCN -- 结构图
-        com2 = self.CGCN(x, fadj)   # Common_GCN -- 特征图
-        emb2 = self.SGCN2(x, fadj)  # Special_GCN2 -- 特征图
-
-        # 融合图卷积结果（结构图卷积和特征图卷积结果加权平均）
-        Xcom = (com1 + com2) / 2
-
-        # 堆叠所有图卷积结果
-        emb = torch.stack([emb1, emb2, Xcom], dim=1)
-        
-        # 使用注意力机制进行加权
-        emb, att = self.attention(emb)  # 计算加权的节点表示及其注意力权重
+        emb = emb1
         
         # 使用全连接层进行股价预测
         x = self.gcn1(emb, edge_index)
         x = torch.relu(x)
-        x, _ = self.rnn(x)
+        x = self.gcn2(x, edge_index)
         # 使用全连接层进行股价预测
         y_pred = self.fc(x)
         
         # 返回图结构优化结果
-        return y_pred, emb1, com1, com2, emb2, emb # 返回各个中间输出
+        return y_pred, emb # 返回各个中间输出
 

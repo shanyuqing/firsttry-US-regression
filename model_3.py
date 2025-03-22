@@ -1,3 +1,9 @@
+# 消融实验模型介绍：
+# 同时使用结构相关性图和时间相关性图。
+# 分别使用多层GCN处理两种图，生成结构嵌入和时间嵌入。
+# 直接拼接两种嵌入（而非使用注意力机制加权融合）。
+# 使用全连接层进行股价预测。
+# 目的：验证同时使用两种图结构的有效性，以及注意力机制的必要性。
 import torch
 import torch.nn as nn
 from layers import GraphConvolution
@@ -99,9 +105,8 @@ class SFGCN(nn.Module):
 
         # 堆叠所有图卷积结果
         emb = torch.stack([emb1, emb2, Xcom], dim=1)
-        
-        # 使用注意力机制进行加权
-        emb, att = self.attention(emb)  # 计算加权的节点表示及其注意力权重
+        emb = emb.sum(1)
+        emb = emb/3
         
         # 使用全连接层进行股价预测
         x = self.gcn1(emb, edge_index)
@@ -111,5 +116,5 @@ class SFGCN(nn.Module):
         y_pred = self.fc(x)
         
         # 返回图结构优化结果
-        return y_pred, emb # 返回各个中间输出
+        return y_pred, emb1, com1, com2, emb2, emb # 返回各个中间输出
 

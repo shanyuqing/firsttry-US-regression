@@ -1,51 +1,68 @@
 from easydict import EasyDict
 
+# 最优值
+
 # 定义 Base_Config
 Base_Config = EasyDict({
-    'input_size': 20,
-    'lr':0.0001,
-    "hidden_size" :64,
+    'input_size': 18,
     "output_size" : 1,# Output for each node (or aggregated output)
-    "num_nodes" : 110  # Number of nodes (example size)
 })
-
-# 定义其他 config，例如 config_gat
+  
 Gat_Config = EasyDict({
-    "num_heads" : 4,
-    "epochs" :64,
+    "lr": 0.007060465495557617,
+    "hidden_size": 97,
+    "dropout": 0.6335058322104097,
+    "epochs": 86,
+    "num_heads": 6,
     'Base': True  
 })
 
-# 待修改
 Gru_Config = EasyDict({
-    "num_layers" : 2,
-    "epochs" :64,
+    "lr": 0.004221795019072234,
+    "hidden_size": 208,
+    "dropout": 0.7054222168853704,
+    "epochs": 251,
+    "num_layers": 3,
     'Base': True  
 })
 
-# 待修改
 Gru_gat_Config = EasyDict({
-    "num_heads" : 4,
-    "gru_layers" : 2,
-    "epochs" :50,
+    "lr": 0.004221795019072234,
+    "hidden_size": 208,
+    "dropout": 0.7054222168853704,
+    "epochs": 251,
+    "num_heads": 3,
+    "num_layers": 3,
     'Base': True  
 })
-# 待修改
+
 Lstm_Config = EasyDict({
-    "num_layers" : 2,
-    "epochs" :128,
+    "lr": 0.005567212291777722,
+    "hidden_size": 208,
+    "dropout": 0.44087028910199877,
+    "epochs": 63,
+    "num_heads": 2,
+    "num_layers": 1,
     'Base': True
 })
-# 待修改
+
 Lstm_gat_Config = EasyDict({
-    "num_heads" : 4,
-    "lstm_layers" : 2,
-    "epochs" :64,
+    "lr": 0.0010568781452759718,
+    "hidden_size": 463,
+    "dropout": 0.16712312612463165,
+    "epochs": 87,
+    "num_heads": 5,
+    "num_layers": 1,
     'Base': True  
 })
+
 Rnn_Config = EasyDict({
-    "num_layers" : 2,
-    "epochs" :32,
+    "lr": 0.0004808791853689083,
+    "hidden_size": 323,
+    "dropout": 0.3425711515596825,
+    "epochs": 194,
+    "num_heads": 1,
+    "num_layers": 5,
     'Base': True  
 })
 # 更新函数

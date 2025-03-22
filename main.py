@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from model_1 import *
+from model import *
 from data.generate_data import create_data, normalize
 import torch
 import torch.nn as nn
@@ -18,26 +18,22 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 n_company = 110
 num_days = 1002  # 股价天数
 num_features = 6  # 每个时间点有6个特征（如开盘价、收盘价等）
-time_window = 20
+time_window = 18  #时间窗口设置为18天为最优
 
-# 定义超参数，后继需要进一步调整！！
-beta = 5e-10
-theta = 0.001
-epochs = 10
+# 使用最优超参数
+beta = 1.2164610467572498e-08
+theta = 1.3510247718823894e-10
+epochs = 38
 batch_size = n_company
-learning_rate = 0.0001
-hidden_dim1 = 768
-hidden_dim2 = 256
-hidden_dim3=128
-hidden_dim4=64
-dropout = 0.5
-# # 调整 beta 和 theta 值，增加其对依赖性和协同关系的惩罚
-# beta = 1e-6
-# theta = 0.01
-# num_layers = 2
+learning_rate = 5.0049754318915105e-05
+hidden_dim1 = 125
+hidden_dim2 = 260
+hidden_dim3 = 193
+hidden_dim4 = 248
+dropout = 0.8993095644168758
 
 ## 获取股票数据 
-folder_path = '/root/firsttry/CMIN/CMIN-US/price/processed/'
+folder_path = '/root/firsttry-main/firsttry_US/CMIN/processed'
 
 ## 获取文件夹中所有文件的文件名
 file_list = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
@@ -49,81 +45,51 @@ all_data = pd.DataFrame()
 for file_name in file_list:
     file_path = os.path.join(folder_path, file_name)
     df = pd.read_csv(file_path, sep='\t', header=None, names=['dt', 'open', 'high', 'low', 'close', 'adj close', 'volume'])  # 读取文件
+    # 按行倒序
+    df = df.iloc[::-1].reset_index(drop=True)
     df['code'] = file_name[0:-4]  # 在DataFrame中添加一列，用于存储文件名
     all_data = pd.concat([all_data, df], ignore_index=True)  # 合并当前文件数据到总数据
 
-# 保存合并后的DataFrame为pkl文件 (num_stock*num_features, index+file_name+num_features+)
-output_path = 'my_data.pkl'
-all_data.to_pickle(output_path)
+# 初始化数组存储股价数据
+stock_data = np.zeros((n_company, num_days, num_features))          # 数值特征数组
 
-#  初始化一个空的三维数组，用于存储股价数据
-stock_data = np.zeros((n_company, num_days, num_features))
-
-#  将数据加载到stock_data中
+# 填充数据
 for i, stock_code in enumerate(all_data['code'].unique()):
-    stock_data[i] = all_data[all_data['code'] == stock_code].iloc[:, 1:7].values
-
-# # 数据归一化(单只股票)
-# normalized_data = np.zeros_like(stock_data)
-# for company_index in range(stock_data.shape[0]):  # 遍历所有公司
-#     for features_index in range(stock_data.shape[2]):  # 遍历所有股票类型
-#         stock_data_single_company = stock_data[company_index, :, features_index]
-        
-#         # Min-Max 归一化
-#         min_val = np.min(stock_data_single_company)
-#         max_val = np.max(stock_data_single_company)
-        
-#         normalized_data[company_index, :, features_index] = (stock_data_single_company - min_val) / (max_val - min_val)
-# stock_data = normalized_data
+    stock_df = all_data[all_data['code'] == stock_code]
+    # 存储数值特征
+    stock_data[i] = stock_df.iloc[:, 1:-1].values  # -1排除code列，1:-1取数值列
 
 # 数据归一化(整体进行归一)
 normalized_data = np.zeros_like(stock_data)
-for features_index in range(stock_data.shape[2]):  
-    # 提取所有公司和所有天数的当前股票类型数据
-    stock_type_data = stock_data[:, :, features_index]  
+
+# 遍历所有特征列（跳过第一列时间戳，处理第2到第7列）
+for features_index in range(stock_data.shape[2]):  # 从1开始，跳过时间戳列
+    # 提取所有公司和所有天数的当前特征数据
+    stock_type_data = stock_data[:, :, features_index]
     
     # 计算全局最大值和最小值
     global_min = np.min(stock_type_data)
     global_max = np.max(stock_type_data)
     
-    # 对该股票类型进行 Min-Max 归一化
+    # 对该特征进行 Min-Max 归一化
     normalized_data[:, :, features_index] = (stock_type_data - global_min) / (global_max - global_min)
 stock_data = normalized_data
 
+
 # 获取结构邻接矩阵
-correlation_path="/root/firsttry/data/topology_matrix.csv"
+correlation_path="/root/firsttry-main/firsttry_US/data/topology_matrix.csv"
 correlation_matrix = pd.read_csv(correlation_path)
 sadj = correlation_matrix.iloc[0:n_company, 1:(n_company+1)].values
-sadj[abs(sadj) < 0.3] = 0  # 将相关系数小于0.3的边删除
+sadj[abs(sadj) < 0.7] = 0  # 阈值取0.7为最佳
 sadj = torch.tensor(sadj, dtype=torch.float32) 
 sadj = sadj + sadj.T.mul(sadj.T > sadj) - sadj.mul(sadj.T > sadj)
 sadj = normalize(sadj + torch.eye(sadj.size(0), dtype=torch.float32))
 sadj = torch.from_numpy(sadj)
 
 # 创建训练数据集和测试集
-batch_data_list = create_data(stock_data, sadj, window=time_window)
+batch_data_list = create_data(stock_data=stock_data, sadj=sadj, time_window= time_window)
 train_data, temp_data = train_test_split(batch_data_list, test_size=0.4, random_state=42)
 val_data, test_data = train_test_split(temp_data, test_size=0.5, random_state=42)
-
-# 定义损失函数
-def common_loss(emb1, emb2):
-    emb1 = emb1 - torch.mean(emb1, dim=0, keepdim=True)
-    emb2 = emb2 - torch.mean(emb2, dim=0, keepdim=True)
-    emb1 = torch.nn.functional.normalize(emb1, p=2, dim=1)
-    emb2 = torch.nn.functional.normalize(emb2, p=2, dim=1)
-    cov1 = torch.matmul(emb1, emb1.t())
-    cov2 = torch.matmul(emb2, emb2.t())
-    cost = torch.mean((cov1 - cov2)**2)
-    return cost
-
-def loss_dependence(emb1, emb2, dim):
-    R = torch.eye(dim).cuda() - (1/dim) * torch.ones(dim, dim).cuda()
-    K1 = torch.mm(emb1, emb1.t())
-    K2 = torch.mm(emb2, emb2.t())
-    RK1 = torch.mm(R, K1)
-    RK2 = torch.mm(R, K2)
-    HSIC = torch.trace(torch.mm(RK1, RK2))
-    return HSIC
 
 # 计算 IC, RankIC, ICIR, RankICIR
 def calculate_metrics(list1, list2):
@@ -156,129 +122,219 @@ def calculate_metrics(list1, list2):
 
     return ic, rank_ic, icir, rankicir
 
-# 定义训练模型
-def train_model(model, train_data, val_data, epochs, lr, beta, theta):
-    print("Training...")
-    optimizer = optim.Adam(model.parameters(), lr, weight_decay=5e-3)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
-   
-    # 创建一个列表来存储每个epoch的损失值
-    loss_values = []
-    val_loss_values = []  # 存储验证集的损失
-    IC = []
+def calculate_ic(pred, target):
+    """计算信息系数 (Information Coefficient)"""
+    pred = pred.view(-1).detach().cpu().numpy()
+    target = target.view(-1).detach().cpu().numpy()
+    return np.corrcoef(pred, target)[0, 1]  # Pearson相关系数
 
+# 定义训练模型
+def train_model(model, train_data, val_data, epochs, lr):
+    """模型训练函数
+    
+    Args:
+        model: 待训练模型
+        train_data: 训练集 DataLoader
+        val_data: 验证集 DataLoader
+        epochs: 训练轮次
+        lr: 初始学习率
+        
+    Returns:
+        tuple: (训练损失记录, 验证指标记录, IC指标记录)
+    """
+    # 初始化优化器和学习率调度器
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=5e-3)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', patience=3, factor=0.5)
+    
+    # 训练记录初始化
+    history = {
+        'train_loss': [],
+        'train_ic': [],
+        'val_metrics': []
+    }
+
+    # 训练循环
     for epoch in range(epochs):
         model.train()
-        epoch_loss = 0.0
-        epoch_ic = []  # 每个epoch记录的IC值列表
-        for i in train_data:
-            x, edge_index, edge_attr, y, fadj, sadj= i[0], i[1], i[2], i[3], i[4], i[5]
-            y_pred, emb1, com1, com2, emb2, emb= model(x, sadj, fadj, edge_index)
+        epoch_metrics = {
+            'total_loss': 0.0,
+            'total_ic': 0.0,
+            'num_samples': 0
+        }
+        
+        # 训练批次迭代
+        for batch in train_data:
+            x, edge_index, edge_attr, y, fadj, sadj = batch[0], batch[1], batch[2], batch[3], batch[4], batch[5]
             optimizer.zero_grad()
-            y=y.view(-1,1)
-
-            # 模型预测
-            n = emb1.size(0)
-            mse_loss = F.mse_loss(y_pred, y)
-            # mae_loss = F.l1_loss(y_pred, y)
-            # rmse_loss = torch.sqrt(mse_loss)
-            # mape_loss = torch.mean(torch.abs((y - y_pred) / (y + 1e-8))) * 100
-            loss_dep = (loss_dependence(emb1, com1, n) + loss_dependence(emb2, com2, n))/2
-            loss_com = common_loss(com1,com2)
-            loss = mse_loss + beta * loss_dep + theta * loss_com
-            ic, rank_ic, icir, rankicir = calculate_metrics(y_pred, y)
-            epoch_loss += loss.item()
-
-            if not np.isnan(ic):
-                epoch_ic.append(ic)  # 记录每个batch的IC
-
-            loss.backward()
-            optimizer.step()
-
-        # 平均损失
-        avg_loss = epoch_loss / len(train_data)
-        loss_values.append(avg_loss)
-        # 验证集评估
-        val_loss = evaluate_model(model, val_data, beta, theta)
-        val_loss_values.append(val_loss)
-        
-        # 计算每个epoch的IC平均值
-        if epoch_ic:
-            avg_ic = np.nanmean(epoch_ic)
-        else:
-            avg_ic = np.nan
-        IC.append(avg_ic)  # 将每个epoch的IC值添加到IC列表
-
-        scheduler.step(val_loss)  # 传入验证损失进行学习率调整
-
-        # 输出每个epoch的训练损失和验证损失
-        print(f'Epoch {epoch + 1}/{epochs}, Training Loss: {avg_loss:.4f}, Validation Loss: {val_loss:.4f},IC: {avg_ic:.4f}')
-        
-    return loss_values, val_loss_values, IC
-
-# 模型验证
-def evaluate_model(model, val_data, beta, theta):
-    model.eval()  # 切换到评估模式
-    val_loss = 0.0
-    with torch.no_grad():  # 在验证时不需要梯度计算
-        for i in val_data:
-            x, edge_index, edge_attr, y, fadj, sadj = i[0], i[1], i[2], i[3], i[4], i[5]
-            y_pred, emb1, com1, com2, emb2, emb = model(x, sadj, fadj, edge_index)
             
+            # 模型前向传播
+            y_pred, emb = model(x, sadj, fadj, edge_index)
             y = y.view(-1, 1)
             
-            # 模型预测
-            n = emb1.size(0)
+            # 损失计算
             mse_loss = F.mse_loss(y_pred, y)
-            # mae_loss = F.l1_loss(y_pred, y)
-            # rmse_loss = torch.sqrt(mse_loss)
-            # mape_loss = torch.mean(torch.abs((y - y_pred) / (y + 1e-8))) * 100
-            loss_dep = (loss_dependence(emb1, com1, n) + loss_dependence(emb2, com2, n))/2
-            loss_com = common_loss(com1,com2)
+            loss = mse_loss 
             
-            # 计算验证集损失
-            loss = mse_loss + beta * loss_dep + theta * loss_com
-            val_loss += loss.item()
+            # 反向传播
+            loss.backward()
+            optimizer.step()
+            
+            # 指标记录
+            batch_size = y.size(0)
+            epoch_metrics['total_loss'] += loss.item() * batch_size
+            epoch_metrics['num_samples'] += batch_size
+            
+            # IC指标计算
+            with torch.no_grad():
+                batch_ic = calculate_ic(y_pred, y)  # 建议封装成独立函数
+                epoch_metrics['total_ic'] += batch_ic * batch_size
+
+        # 计算epoch平均指标
+        avg_loss = epoch_metrics['total_loss'] / epoch_metrics['num_samples']
+        avg_ic = epoch_metrics['total_ic'] / epoch_metrics['num_samples']
+        history['train_loss'].append(avg_loss)
+        history['train_ic'].append(avg_ic)
+        
+        # 验证集评估
+        val_metrics = evaluate_model(model, val_data)  # 使用优化后的评估函数
+        history['val_metrics'].append(val_metrics)
+        
+        # 学习率调度
+        scheduler.step(val_metrics['val_mse'])  # 根据验证集MSE调整学习率
+        
+        # 训练过程打印
+        print(f"Epoch {epoch+1}/{epochs} | "
+              f"Train Loss: {avg_loss:.4f} | "
+              f"Train IC: {avg_ic:.4f} | "
+              f"Val MSE: {val_metrics['val_mse']:.4f} | "
+              f"Val MAE: {val_metrics['val_mae']:.4f} | "
+              f"Val MAPE: {val_metrics['val_mape']:.2f}%")
     
-    # 返回验证集平均损失
-    avg_val_loss = val_loss / len(val_data)
-    return avg_val_loss
+    return history['train_loss'], history['val_metrics'], history['train_ic']
+# 模型验证
+def evaluate_model(model, val_data):
+    """评估模型在验证集上的性能，返回多指标结果
+    
+    Args:
+        model: 待评估模型
+        val_data: 验证集 DataLoader
+    
+    Returns:
+        dict: 包含各指标的平均值
+    """
+    model.eval()
+    total_losses = {
+        'mse': 0.0,
+        'mae': 0.0,
+        'mape': 0.0,
+        'num_samples': 0
+    }
+    all_preds = []
+    all_targets = []
+    
+    with torch.no_grad():
+        for batch in val_data:
+            x, edge_index, edge_attr, y, fadj, sadj = batch[0], batch[1], batch[2], batch[3], batch[4], batch[5]
+            y_pred, emb = model(x, sadj, fadj, edge_index)
+            y = y.view(-1, 1)
+            
+            # 保存预测和真实值用于整体计算
+            all_preds.append(y_pred)
+            all_targets.append(y)
+            
+            # 逐batch累加指标
+            total_losses['mse'] += F.mse_loss(y_pred, y, reduction='sum').item()
+            total_losses['mae'] += F.l1_loss(y_pred, y, reduction='sum').item()
+            
+            # 处理 MAPE 的除零问题
+            non_zero_mask = y != 0
+            if non_zero_mask.any():
+                mape_batch = torch.abs((y[non_zero_mask] - y_pred[non_zero_mask]) / y[non_zero_mask]).sum().item()
+                total_losses['mape'] += mape_batch * 100  # 转换为百分比
+                
+            total_losses['num_samples'] += y.size(0)
+    
+    # 合并所有样本统一计算指标
+    all_preds = torch.cat(all_preds, dim=0)
+    all_targets = torch.cat(all_targets, dim=0)
+    n_samples = total_losses['num_samples']
+    
+    # 最终指标计算
+    mse = total_losses['mse'] / n_samples
+    mae = total_losses['mae'] / n_samples
+    rmse = torch.sqrt(torch.tensor(mse)).item()
+    mape = total_losses['mape'] / n_samples if total_losses['mape'] > 0 else float('nan')
+    
+    return {
+        'val_mse': mse,
+        'val_mae': mae,
+        'val_rmse': rmse,
+        'val_mape': mape
+    }
 
 
 # 模型测试
 def test_model(model, test_data):
-    print("Testing...")
+    """测试模型性能，返回预测值和多指标结果
+    
+    Args:
+        model: 训练好的模型
+        test_data: 测试集 DataLoader
+    
+    Returns:
+        tuple: (pred_values, target_values, metrics_dict)
+    """
     model.eval()
-    mse_total_loss = 0.0
-    mae_total_loss = 0.0
-    rmse_total_loss = 0.0
-    mape_total_loss = 0.0
+    total_losses = {
+        'mse': 0.0,
+        'mae': 0.0,
+        'mape': 0.0,
+        'num_samples': 0
+    }
     pred_values = []
     target_values = []
+    
     with torch.no_grad():
-        for i in test_data:
-            x, edge_index, edge_attr, y, fadj, sadj= i[0], i[1], i[2], i[3], i[4], i[5]
-            y_pred, emb1, com1, com2, emb2, emb= model(x, sadj, fadj, edge_index)
+        for batch in test_data:
+            x, edge_index, edge_attr, y, fadj, sadj = batch[0], batch[1], batch[2], batch[3], batch[4], batch[5]
+            y_pred, emb = model(x, sadj, fadj, edge_index)
             y = y.view(-1, 1)
-            mse_loss = F.mse_loss(y_pred, y)
-            mae_loss = F.l1_loss(y_pred, y)
-            rmse_loss = torch.sqrt(mse_loss)
-            non_zero_mask = y != 0  # 过滤掉真实值为零的样本
-            mape_loss = torch.mean(torch.abs((y[non_zero_mask] - y_pred[non_zero_mask]) / (y[non_zero_mask] + 1e-8))) * 100
-            mse_total_loss += mse_loss.item()
-            mae_total_loss += mae_loss.item()
-            rmse_total_loss += rmse_loss.item()
-            mape_total_loss += mape_loss.item()
+            
+            # 保存预测和真实值
             pred_values.append(y_pred)
             target_values.append(y)
-    # 拼接所有预测值和目标值
+            
+            # 累加指标
+            total_losses['mse'] += F.mse_loss(y_pred, y, reduction='sum').item()
+            total_losses['mae'] += F.l1_loss(y_pred, y, reduction='sum').item()
+            
+            # 处理 MAPE
+            non_zero_mask = y != 0
+            if non_zero_mask.any():
+                mape_batch = torch.abs((y[non_zero_mask] - y_pred[non_zero_mask]) / y[non_zero_mask]).sum().item()
+                total_losses['mape'] += mape_batch * 100
+                
+            total_losses['num_samples'] += y.size(0)
+    
+    # 合并数据
     pred_values = torch.cat(pred_values, dim=0)
     target_values = torch.cat(target_values, dim=0)
-    print(f"main_test mse_loss: {mse_total_loss / len(test_data)}")
-    print(f"main_test mae_loss: {mae_total_loss / len(test_data)}")
-    print(f"main_test rmse_loss: {rmse_total_loss / len(test_data)}")
-    print(f"main_test mape_loss: {mape_total_loss / len(test_data)}")
-    return pred_values, target_values
+    n_samples = total_losses['num_samples']
+    
+    # 计算最终指标
+    mse = total_losses['mse'] / n_samples
+    mae = total_losses['mae'] / n_samples
+    rmse = torch.sqrt(torch.tensor(mse)).item()
+    mape = total_losses['mape'] / n_samples if total_losses['mape'] > 0 else float('nan')
+    
+    metrics = {
+        'test_mse': mse,
+        'test_mae': mae,
+        'test_rmse': rmse,
+        'test_mape': mape
+    }
+    
+    return pred_values, target_values, metrics
 
 if __name__ == "__main__":
     print("main.py is being run directly")
@@ -286,13 +342,14 @@ if __name__ == "__main__":
     model = SFGCN(input_dim = time_window, hidden_dim1 = hidden_dim1, hidden_dim2 = hidden_dim2, hidden_dim3=hidden_dim3, hidden_dim4=hidden_dim4, dropout = dropout).to(device)
 
     # 训练模型
-    loss_values, val_loss_values, IC = train_model(model, train_data, val_data, epochs=epochs, lr=learning_rate, beta=beta, theta=theta)
+    loss_values, val_loss_values, IC = train_model(model, train_data, val_data, epochs=epochs, lr=learning_rate)
 
     # 绘制训练时的损失曲线
     epochs_range = range(epochs)
+    val_mse_values = [d['val_mse'] for d in val_loss_values]
     plt.figure(figsize=(8, 6))
     plt.plot(epochs_range, loss_values, marker='o', linestyle='-', color='b', label='train_loss')
-    plt.plot(epochs_range, val_loss_values, marker='o', linestyle='-', color='g', label='val_loss')
+    plt.plot(epochs_range,val_mse_values, marker='o', linestyle='-', color='g', label='val_loss')
     plt.plot(epochs_range, IC, marker='o', linestyle='-', color='r', label='ic')
     plt.title('Loss/IC Curve', fontsize=14)
     plt.xlabel('Epoch', fontsize=12)
@@ -302,31 +359,20 @@ if __name__ == "__main__":
     plt.show()
     plt.savefig('main.png')
 
-    # 测试模型
-    pred_values, target_values = test_model(model, test_data)
+    # 验证阶段
+    val_metrics = evaluate_model(model, val_data)
+    print(f"Validation MSE: {val_metrics['val_mse']:.4f}, MAPE: {val_metrics['val_mape']:.2f}%")
+
+    # 测试阶段
+    pred_values, target_values, test_metrics = test_model(model, test_data)
     pred_values, target_values = [t.cpu() for t in pred_values], [t.cpu() for t in target_values]
     
     # 计算评价指标
     ic, rank_ic, icir, rankicir = calculate_metrics(pred_values, target_values)
-
-    # 输出四个评价指标
-    print(f'IC: {ic}')
-    print(f'RankIC: {rank_ic}')
-    print(f'ICIR: {icir}')
-    print(f'RankICIR: {rankicir}')
-
-    # 绘制实际值与预测值对比
-    plt.figure()
-    plt.style.use('ggplot')
-    # 创建折线图
-    plt.plot(target_values, label='real', color='blue')  # 实际值
-    plt.plot(pred_values, label='forecast', color='red', linestyle='--')  # 预测值
-
-    # 增强视觉效果
-    plt.grid(True)
-    plt.title('real vs forecast')
-    plt.ylabel('value')
-    plt.legend()
-    plt.savefig('main_testing_real_forecast.png')
+    
+    print(f"Test RMSE: {test_metrics['test_rmse']:.4f}, MAE: {test_metrics['test_mae']:.4f}, RMSE:{test_metrics['test_rmse']:.4f},MAPE:{test_metrics['test_mape']:.2f}%")
+    print(f"IC:{ic:.4f},RANK_IC:{rank_ic:.4f} ICIR:{icir:.4f} RANKICIR:{rankicir:.4f}")
+    
+    
 
 
